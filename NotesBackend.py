@@ -1,8 +1,9 @@
 import sqlite3
 import sys
 
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtWidgets import QMainWindow, QListWidgetItem, QFileDialog, QMessageBox
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import QApplication, QMainWindow, QListWidgetItem, QFileDialog, QMessageBox
 
 from NotesWindow import Ui_NotesWindow
 from NoteWindow import Ui_NoteWindow
@@ -16,7 +17,7 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-
+        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.con = sqlite3.connect("notes_db.sqlite")
 
         self.goBackButton.mousePressEvent = self.back

@@ -1,6 +1,6 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow
-from GraphsWindow import Ui_BaseWindow
+from bin.GraphsWindow import Ui_BaseWindow
 import numpy as np
 import matplotlib.pyplot as plt
 

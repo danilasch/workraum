@@ -4,6 +4,8 @@ import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
 
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QMainWindow, QListWidgetItem, QFileDialog, QMessageBox
 
@@ -14,7 +16,7 @@ from ManagementMenu import Ui_ManageWindow
 from NotesWindow import Ui_NotesWindow
 from NoteWindow import Ui_NoteWindow
 
-from GraphsWindow import Ui_BaseWindow
+from bin.GraphsWindow import Ui_BaseWindow
 
 
 def create_main_window():
@@ -70,14 +72,13 @@ class StudyMenu(QMainWindow, Ui_StudyMenu):
         self.setupUi(self)
 
         self.graphsName.mousePressEvent = self.open_graph
-        self.graphsOption.mousePressEvent = self.open_graph
+        # self.graphsOption.mousePressEvent = self.open_graph
 
         self.goBackButton.mousePressEvent = self.go_back
 
-    def open_graph(self, event):
-
-        graph = GraphsWidget()
-        graph.show()
+    # def open_graph(self, event):
+    #     graph = GraphsWidget()
+    #     graph.show()
 
     def go_back(self, event):
         show_main_window()
@@ -125,31 +126,31 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
         self.addButton.mousePressEvent = self.add_note
         self.removeButton.mousePressEvent = self.remove_note
         self.exportButton.mousePressEvent = self.export_note
-        self.listWidget.itemClicked.connect(self.note_clicked)
+        self.listWidget.itemDoubleClicked.connect(self.note_clicked)
 
         self.elements_dictionary = {}
         self.update_list()
-        # ключ - номер в строчки в QListWidget, значение - id заметки
+        # ключ - номер в строчки в QListWidget, значение - id стикера
 
     def back(self, event):
         # возвращение в меню заметок
         show_management()
         self.hide()
 
-    def add_note(self, event):  # добавляем заметку
-        # подготавливаем id для новой заметки
+    def add_note(self, event):  # добавляем стикер
+        # подготавливаем id для нового стикера
         if self.elements_dictionary:
             max_id = max(self.elements_dictionary.values())
 
         else:
             max_id = 0
 
-        # открываем окно для создания заметки и помечаем её как новую
+        # открываем окно для создания стикера и помечаем её как новую
         note = NoteWindow(max_id + 1, True)
         note.show()
 
     def remove_note(self, event):
-        # удаляем заметку
+        # удаляем стикер
 
         list_items = [x.row() for x in self.listWidget.selectedIndexes()]
 
@@ -158,7 +159,7 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
 
         qm = QMessageBox
         qm.question(self, '',
-                    "Вы действительно хотите удалить выделенные заметки?",
+                    "Вы действительно хотите удалить выделенные стикеры?",
                     qm.Yes | qm.No)
 
         if qm.Yes:  # необходимо подтвердить удаление
@@ -172,7 +173,7 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
         else:
             qm.close(self)
 
-    def export_note(self, event):  # экспортируем выбранную заметку в файл .txt
+    def export_note(self, event):  # экспортируем выбраный стикер в файл .txt
         cur = self.con.cursor()
         fname = QFileDialog.getSaveFileName(
             self, 'Сохранить в текстовый документ', '/',
@@ -186,7 +187,7 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
         file.close()
 
     def update_list(self):
-        self.listWidget.clear()  # очищаем список заметок, чтобы заполинть его
+        self.listWidget.clear()  # очищаем список стикеров, чтобы заполинть его
         cur = self.con.cursor()
         # собираем данные из обновленной БД
         ids = cur.execute("SELECT id FROM notes").fetchall()
@@ -195,14 +196,14 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
         for i, (note_id, note_name) in enumerate(zip(ids, names)):
             self.elements_dictionary[i] = note_id[0]  # актуализируем словарь
 
-            #  обновляем список заметок
+            #  обновляем список стикеров
             self.listWidget.addItem(QListWidgetItem(str(note_name[0])))
 
-    def note_clicked(self):  # пользователь решил отредактировать заметку
-        # находим id заметки по её порядковому номеру
+    def note_clicked(self):  # пользователь решил отредактировать стикер
+        # находим id стикера по её порядковому номеру
         note_id = self.elements_dictionary[self.listWidget.currentRow()]
 
-        # открываем окно для редактирования заметки и помечаем её как не новую
+        # открываем окно для редактирования стикера и помечаем её как не новую
         note = NoteWindow(note_id, False)
         note.show()
 
@@ -213,34 +214,59 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
         self.setupUi(self)
         self.id = note_id
 
+        self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint)
+        self._drag_active = False  # флаг для drag and drop стикера
+
         self.con = sqlite3.connect("notes_db.sqlite")
 
-        if not is_new_note:  # редактируем уже имеющуюся заметку
+        if not is_new_note:  # редактируем уже имеющийся стикер
             cur = self.con.cursor()
-            print(cur.execute("SELECT name FROM notes WHERE id=?", (note_id,)).fetchone()[0])
             self.nameInput.setText(cur.execute("SELECT name FROM notes WHERE id=?",
                                                (note_id, )).fetchone()[0])
 
-            print(cur.execute("SELECT text FROM notes WHERE id=?", (note_id, )).fetchone())
             self.textEdit.setText(cur.execute(
                 "SELECT text FROM notes WHERE id=?", (note_id, )).fetchone()[0])
-            self.saveButton.mousePressEvent = self.edit_note
+            self.closeButton.mousePressEvent = self.edit_note
 
-        else:  # создаём новую заметку
-            self.saveButton.mousePressEvent = self.new_note
+        else:  # создаём новый стикер
+            self.nameInput.setText("Новый стикер")
 
-    def new_note(self, event):
-        #  актуализируем информацию в БД
-        cur = self.con.cursor()
-        print(self.id)
-        cur.execute("INSERT INTO notes(id, name, text) VALUES(?, ?, ?)",
-                    (self.id, self.nameInput.text(), self.textEdit.toPlainText()))
-        self.con.commit()
+            cur = self.con.cursor()
+            cur.execute("INSERT INTO notes(id, name, text) VALUES(?, ?, ?)",
+                        (self.id, self.nameInput.text(), self.textEdit.toPlainText()))
+            self.con.commit()
 
-        # закрепляем за заметкой статус уже существующей
-        self.saveButton.mousePressEvent = self.edit_note
+            # закрепляем за стикером статус уже существующей
+            self.closeButton.mousePressEvent = self.edit_note
 
-        update_list()  # обновляем графическое представление БД
+            update_list()
+
+    def mousePressEvent(self, e):  # метод для drag and drop: запоминаем изначальную позицию
+        self.previous_pos = e.globalPos()
+
+    def mouseMoveEvent(self, e):  # метод для drag and drop: меняем позицию стикера
+        delta = e.globalPos() - self.previous_pos
+        self.move(self.x() + delta.x(), self.y() + delta.y())
+        self.previous_pos = e.globalPos()
+
+        self._drag_active = True
+
+    def mouseReleaseEvent(self, e):
+        if self._drag_active:
+            self._drag_active = False
+
+    # def new_note(self, event):
+    #     #  актуализируем информацию в БД
+    #     cur = self.con.cursor()
+    #     cur.execute("INSERT INTO notes(id, name, text) VALUES(?, ?, ?)",
+    #                 (self.id, self.nameInput.text(), self.textEdit.toPlainText()))
+    #     self.con.commit()
+    #
+    #     # закрепляем за стикером статус уже существующей
+    #     self.closeButton.mousePressEvent = self.edit_note
+    #
+    #     update_list()  # обновляем графическое представление БД
+    #     self.close()
 
     def edit_note(self, event):
         cur = self.con.cursor()
@@ -251,110 +277,7 @@ WHERE id = ?''', (self.nameInput.text(), self.textEdit.toPlainText(), self.id))
         self.con.commit()
 
         update_list()  # обновляем графическое представление БД
-
-
-class GraphsWidget(QMainWindow, Ui_BaseWindow):
-    def __init__(self):
-        super().__init__()
-        self.setupUi(self)
-
-        self.goBackButton.mousePressEvent = self.go_back
-
-        self.askButton.mousePressEvent = self.help
-        self.calcButton.mousePressEvent = self.run
-
-    def go_back(self):
-        create_main_window()
-        self.hide()
-
-    def calc(self, string_function, x):
-        try:  # если требуется постоянная функция y = x
-
-            function = np.array([int(string_function) for _ in range(200)])
-
-        except ValueError:
-
-            try:
-                functions = (" arcsin", " arccos", " arctan", " sin", " cos",
-                             " tan", " exp", " log", " sqrt", " pi", " e")
-
-                for math_function in functions:
-
-                    # заменяем математические функции, удобные для восприятия человеком,
-                    # на те, с которыми может работать matplotlib
-                    if math_function in string_function:
-                        string_function = string_function.replace(
-                            math_function, f" np.{math_function[1:]}")
-
-                function = eval(string_function)
-
-            except (SyntaxError, NameError):
-                return None  # в случае некорректного ввода
-
-        return function
-
-    def define_borders(self, border, edge):  # метод для определения границ графика
-
-        if not border:  # значение по умолчанию
-            return 100 * int(edge)  # edge - аргумент, указывающий, какойкрай обрабатывается
-
-        if "pi" in border:  # в границах иногда может быть использовано число пи
-            border.replace("pi", "np.pi")
-
-            return eval(border)
-
-        return int(border)
-
-    def run(self, event):
-        self.messageBox.setText('')
-        mini, maxi = self.define_borders(self.leftBorderInput.text(), -1),\
-            self.define_borders(self.rightBorderInput.text(), 1)  # границы
-
-        fig, ax = plt.subplots()  # отрисовываем координатную плоскость
-
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        try:
-            graphs = 2  # количество графиков; если их не будет, ничего не получится начертить
-            x = np.linspace(mini, maxi, 200)
-            y1, y2 = self.calc(
-                ' ' + self.functionInput.text(), x), self.calc(' ' + self.functionInput_2.text(), x)
-            try:
-                ax.plot(x, y1, color="blue", label="y1(x)")  # рисуем график
-
-            except (ValueError, TypeError, SyntaxError):  # если графика нет
-                graphs -= 1
-
-            try:
-                ax.plot(x, y2, color="red", label="y2(x)")
-
-            except (ValueError, TypeError, SyntaxError):
-                graphs -= 1
-
-            if not graphs:
-                raise ValueError
-
-        except TypeError:  # некорректно указаны границы функции
-            self.messageBox.setText(self.messageBox.text() + "Неверно указаны границы\n")
-
-        except ValueError:  # оба поля для ввода функции пустые, ошибка вызывается намеренно
-            self.messageBox.setText(
-                self.messageBox.text() + "Укажите корректно хотя бы один график\n")
-
-        else:  # отрисовываем
-            ax.plot(x, np.array([0 for _ in range(200)]), color="black")  # ось х
-            ax.legend()
-            plt.show()
-
-    def help(self, event):  # нажатие на кнопку знака вопроса для вывода вспомогательной информации
-        self.messageBox.setText(
-            '''1) Вводите только правую часть уравнения
-2) Математические функции и константы вводите в следующем виде:
-sin(x), cos(x), tan(x), arcsin(x), arccos(x), arctan(x), exp(x), log(x),
-sqrt(x), pi, e
-и только в области определения
-3) Арифметические действия указывайте в формате:
-+ - * / **''')
+        self.close()
 
 
 if __name__ == '__main__':
