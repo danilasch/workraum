@@ -60,34 +60,7 @@ class Ui_NotesWindow(object):
 "color: rgb(50, 130, 184);\n"
 "background-color: rgb(14, 23, 38);")
         self.listWidget.setObjectName("listWidget")
-        self.titleBar = QtWidgets.QWidget(self.BaseWidget)
-        self.titleBar.setGeometry(QtCore.QRect(-3, -10, 961, 41))
-        self.titleBar.setMouseTracking(False)
-        self.titleBar.setStyleSheet("background-color: rgb(35, 41, 53);")
-        self.titleBar.setObjectName("titleBar")
-        self.closeButton = QtWidgets.QPushButton(self.titleBar)
-        self.closeButton.setGeometry(QtCore.QRect(920, 7, 31, 31))
-        font = QtGui.QFont()
-        font.setFamily("Webdings")
-        font.setPointSize(12)
-        self.closeButton.setFont(font)
-        self.closeButton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.closeButton.setMouseTracking(True)
-        self.closeButton.setStyleSheet("QPushButton::hover\n"
-"{\n"
-"    background-color : red;\n"
-" }")
-        self.closeButton.setFlat(True)
-        self.closeButton.setObjectName("closeButton")
-        self.hideButton = QtWidgets.QPushButton(self.titleBar)
-        self.hideButton.setGeometry(QtCore.QRect(890, 7, 31, 31))
-        font = QtGui.QFont()
-        font.setFamily("Webdings")
-        font.setPointSize(12)
-        self.hideButton.setFont(font)
-        self.hideButton.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.hideButton.setFlat(True)
-        self.hideButton.setObjectName("hideButton")
+
         NotesWindow.setCentralWidget(self.BaseWidget)
 
         self.retranslateUi(NotesWindow)

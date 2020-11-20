@@ -1,9 +1,6 @@
 import sys
 import sqlite3
 
-import numpy as np
-import matplotlib.pyplot as plt
-
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QApplication
@@ -12,11 +9,10 @@ from PyQt5.QtWidgets import QMainWindow, QListWidgetItem, QFileDialog, QMessageB
 from MainMenu import Ui_MainMenu
 from StudyMenu import Ui_StudyMenu
 from ManagementMenu import Ui_ManageWindow
+from BaseWindowClass import BaseWindow
 
 from NotesWindow import Ui_NotesWindow
 from NoteWindow import Ui_NoteWindow
-
-from bin.GraphsWindow import Ui_BaseWindow
 
 
 def create_main_window():
@@ -114,15 +110,20 @@ class ManagementMenu(QMainWindow, Ui_ManageWindow):
         self.hide()
 
 
-class NotesWindow(QMainWindow, Ui_NotesWindow):
+class NotesWindow(BaseWindow, Ui_NotesWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        # self.titleBar, self.closeButton = self.titleBar, self.closeButton
 
         self.con = sqlite3.connect("notes_db.sqlite")
 
-        self.goBackButton.mousePressEvent = self.back
+        # свернуть и закрыть - функции кнопок верхней панели
+        self.closeButton.clicked.connect(self.close)
+        self.hideButton.clicked.connect(self.showMinimized)
 
+        # события для кнопок слева
+        self.goBackButton.mousePressEvent = self.back
         self.addButton.mousePressEvent = self.add_note
         self.removeButton.mousePressEvent = self.remove_note
         self.exportButton.mousePressEvent = self.export_note
@@ -157,34 +158,42 @@ class NotesWindow(QMainWindow, Ui_NotesWindow):
         if not list_items:
             return None
 
-        qm = QMessageBox
-        qm.question(self, '',
-                    "Вы действительно хотите удалить выделенные стикеры?",
-                    qm.Yes | qm.No)
+        qm = QMessageBox()
 
-        if qm.Yes:  # необходимо подтвердить удаление
+        qm.setWindowTitle('Подтверждение удаления')
+        qm.setText('Вы действительно хотите удалить выделенные стикеры?')
+        qm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        qm.setStyleSheet("background-color: rgb(23, 28, 37); color: rgb(255, 255, 255)")
+        button_yes = qm.button(QMessageBox.Yes)
+        button_yes.setText('Да')
+        button_no = qm.button(QMessageBox.No)
+        button_no.setText('Нет')
+        qm.exec_()
+
+        if qm.clickedButton() == button_yes:  # необходимо подтвердить удаление
             ids = [self.elements_dictionary[i] for i in list_items]
             cur = self.con.cursor()
             cur.execute("DELETE FROM notes WHERE id in (" + ", ".join(
-                        '?' * len(ids)) + ")", ids)
+                '?' * len(ids)) + ")", ids)
             self.con.commit()
             self.update_list()
 
         else:
-            qm.close(self)
+            qm.close()
 
     def export_note(self, event):  # экспортируем выбраный стикер в файл .txt
-        cur = self.con.cursor()
         fname = QFileDialog.getSaveFileName(
             self, 'Сохранить в текстовый документ', '/',
             'Текстовый документ (*.txt)')[0]
-
-        file = open(fname, 'w')
-        text = cur.execute(
-            "SELECT text FROM notes WHERE id = ?",
-            (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[0]
-        file.write(text)
-        file.close()
+        if fname:
+            cur = self.con.cursor()
+            file = open(fname, 'w')
+            text = cur.execute(
+                "SELECT text FROM notes WHERE id = ?",
+                (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[
+                0]
+            file.write(text)
+            file.close()
 
     def update_list(self):
         self.listWidget.clear()  # очищаем список стикеров, чтобы заполинть его
@@ -222,10 +231,10 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
         if not is_new_note:  # редактируем уже имеющийся стикер
             cur = self.con.cursor()
             self.nameInput.setText(cur.execute("SELECT name FROM notes WHERE id=?",
-                                               (note_id, )).fetchone()[0])
+                                               (note_id,)).fetchone()[0])
 
             self.textEdit.setText(cur.execute(
-                "SELECT text FROM notes WHERE id=?", (note_id, )).fetchone()[0])
+                "SELECT text FROM notes WHERE id=?", (note_id,)).fetchone()[0])
             self.closeButton.mousePressEvent = self.edit_note
 
         else:  # создаём новый стикер
@@ -254,19 +263,6 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
     def mouseReleaseEvent(self, e):
         if self._drag_active:
             self._drag_active = False
-
-    # def new_note(self, event):
-    #     #  актуализируем информацию в БД
-    #     cur = self.con.cursor()
-    #     cur.execute("INSERT INTO notes(id, name, text) VALUES(?, ?, ?)",
-    #                 (self.id, self.nameInput.text(), self.textEdit.toPlainText()))
-    #     self.con.commit()
-    #
-    #     # закрепляем за стикером статус уже существующей
-    #     self.closeButton.mousePressEvent = self.edit_note
-    #
-    #     update_list()  # обновляем графическое представление БД
-    #     self.close()
 
     def edit_note(self, event):
         cur = self.con.cursor()

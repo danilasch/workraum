@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>823</width>
+    <width>828</width>
     <height>619</height>
    </rect>
   </property>
@@ -20,6 +20,19 @@
    <property name="styleSheet">
     <string notr="true">background-color: rgb(250, 245, 230);</string>
    </property>
+   <widget class="QPushButton" name="pushButton">
+    <property name="geometry">
+     <rect>
+      <x>320</x>
+      <y>250</y>
+      <width>93</width>
+      <height>28</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>PushButton</string>
+    </property>
+   </widget>
   </widget>
  </widget>
  <resources/>
