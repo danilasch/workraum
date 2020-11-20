@@ -6,108 +6,35 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QMainWindow, QListWidgetItem, QFileDialog, QMessageBox
 
-from MainMenu import Ui_MainMenu
-from StudyMenu import Ui_StudyMenu
-from ManagementMenu import Ui_ManageWindow
 from BaseWindowClass import BaseWindow
 
 from NotesWindow import Ui_NotesWindow
 from NoteWindow import Ui_NoteWindow
+from ToDoMenu import Ui_ToDoMenu
 
 
-def create_main_window():
-    global app, ex
-    app = QApplication(sys.argv)
-    ex = MainMenu()
-    ex.show()
-    sys.exit(app.exec())
+# def create_main_window():
+#     global app, ex
+#     app = QApplication(sys.argv)
+#     ex = MainMenu()
+#     ex.show()
+#     sys.exit(app.exec())
 
 
-def show_main_window():
-    ex.show()
+def switch_to_notes():
+    notes.show()
+    notes.setGeometry(todo.geometry())
+    todo.hide()
 
 
-def show_management():
-    ex.show_management()
+def switch_to_todo():
+    todo.show()
+    todo.setGeometry(notes.geometry())
+    notes.hide()
 
 
 def update_list():
-    ex.update_list()
-
-
-class MainMenu(QMainWindow, Ui_MainMenu):
-    def __init__(self):
-        super().__init__()
-        self.setupUi(self)
-
-        self.studyName.mousePressEvent = self.open_study
-        self.studyOption.mousePressEvent = self.open_study
-        self.managementName.mousePressEvent = self.open_management
-        self.managementName.mousePressEvent = self.open_management
-
-    def open_study(self, event):
-        study = StudyMenu()
-        study.show()
-        self.hide()
-
-    def open_management(self, event):
-        self.manage = ManagementMenu()
-        self.manage.show()
-        self.hide()
-
-    def update_list(self):
-        self.manage.notes.update_list()
-
-    def show_management(self):
-        self.manage.show()
-
-
-class StudyMenu(QMainWindow, Ui_StudyMenu):
-    def __init__(self):
-        super().__init__()
-        self.setupUi(self)
-
-        self.graphsName.mousePressEvent = self.open_graph
-        # self.graphsOption.mousePressEvent = self.open_graph
-
-        self.goBackButton.mousePressEvent = self.go_back
-
-    # def open_graph(self, event):
-    #     graph = GraphsWidget()
-    #     graph.show()
-
-    def go_back(self, event):
-        show_main_window()
-        self.hide()
-
-
-class ManagementMenu(QMainWindow, Ui_ManageWindow):
-    def __init__(self):
-        super().__init__()
-        self.setupUi(self)
-
-        self.notesName.mousePressEvent = self.open_notes
-        self.notesOption.mousePressEvent = self.open_notes
-
-        self.todoName.mousePressEvent = self.open_todo
-        self.todoName.mousePressEvent = self.open_todo
-
-        self.goBackButton.mousePressEvent = self.go_back
-
-    def open_notes(self, event):
-        self.notes = NotesWindow()
-        self.notes.show()
-        self.hide()
-
-    def open_todo(self, event):
-        pass
-        # study = StudyMenu()
-        # study.show()
-        # self.hide()
-
-    def go_back(self, event):
-        show_main_window()
-        self.hide()
+    notes.update_list()
 
 
 class NotesWindow(BaseWindow, Ui_NotesWindow):
@@ -120,23 +47,24 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
 
         # свернуть и закрыть - функции кнопок верхней панели
         self.closeButton.clicked.connect(self.close)
+        # self.closeButton.mouseMoveEvent = self.closeButton.setStyleSheet("background-color: red")
         self.hideButton.clicked.connect(self.showMinimized)
+        self.titleBar.mousePressEvent = self.titleBarMousePressEvent
 
         # события для кнопок слева
-        self.goBackButton.mousePressEvent = self.back
+        self.goToToDo.mousePressEvent = self.switch_to_todo
         self.addButton.mousePressEvent = self.add_note
         self.removeButton.mousePressEvent = self.remove_note
         self.exportButton.mousePressEvent = self.export_note
         self.listWidget.itemDoubleClicked.connect(self.note_clicked)
+        # ToDo сделать кнопку помощи
 
         self.elements_dictionary = {}
         self.update_list()
         # ключ - номер в строчки в QListWidget, значение - id стикера
 
-    def back(self, event):
-        # возвращение в меню заметок
-        show_management()
-        self.hide()
+    def switch_to_todo(self, event):
+        switch_to_todo()
 
     def add_note(self, event):  # добавляем стикер
         # подготавливаем id для нового стикера
@@ -171,10 +99,9 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
         qm.exec_()
 
         if qm.clickedButton() == button_yes:  # необходимо подтвердить удаление
-            ids = [self.elements_dictionary[i] for i in list_items]
+            note_id = self.elements_dictionary[list_items[0]]
             cur = self.con.cursor()
-            cur.execute("DELETE FROM notes WHERE id in (" + ", ".join(
-                '?' * len(ids)) + ")", ids)
+            cur.execute("DELETE FROM notes WHERE id = ?", (note_id, ))
             self.con.commit()
             self.update_list()
 
@@ -182,12 +109,12 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
             qm.close()
 
     def export_note(self, event):  # экспортируем выбраный стикер в файл .txt
-        fname = QFileDialog.getSaveFileName(
+        file_name = QFileDialog.getSaveFileName(
             self, 'Сохранить в текстовый документ', '/',
             'Текстовый документ (*.txt)')[0]
-        if fname:
+        if file_name:
             cur = self.con.cursor()
-            file = open(fname, 'w')
+            file = open(file_name, 'w')
             text = cur.execute(
                 "SELECT text FROM notes WHERE id = ?",
                 (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[
@@ -225,12 +152,13 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
 
         self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint)
         self._drag_active = False  # флаг для drag and drop стикера
+        self.spacer.mousePressEvent = self.spacerMousePressEvent
 
         self.con = sqlite3.connect("notes_db.sqlite")
 
         if not is_new_note:  # редактируем уже имеющийся стикер
             cur = self.con.cursor()
-            self.nameInput.setText(cur.execute("SELECT name FROM notes WHERE id=?",
+            self.nameInput.setText(cur.execute("SELECT name FROM notes WHERE id = ?",
                                                (note_id,)).fetchone()[0])
 
             self.textEdit.setText(cur.execute(
@@ -250,15 +178,16 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
 
             update_list()
 
-    def mousePressEvent(self, e):  # метод для drag and drop: запоминаем изначальную позицию
+    def spacerMousePressEvent(self, e):  # метод для drag and drop: запоминаем изначальную позицию
         self.previous_pos = e.globalPos()
+        self._drag_active = True
 
     def mouseMoveEvent(self, e):  # метод для drag and drop: меняем позицию стикера
-        delta = e.globalPos() - self.previous_pos
-        self.move(self.x() + delta.x(), self.y() + delta.y())
-        self.previous_pos = e.globalPos()
+        if self._drag_active:
+            delta = e.globalPos() - self.previous_pos
+            self.move(self.x() + delta.x(), self.y() + delta.y())
+            self.previous_pos = e.globalPos()
 
-        self._drag_active = True
 
     def mouseReleaseEvent(self, e):
         if self._drag_active:
@@ -276,8 +205,59 @@ WHERE id = ?''', (self.nameInput.text(), self.textEdit.toPlainText(), self.id))
         self.close()
 
 
+class ToDoMenu(BaseWindow, Ui_ToDoMenu):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+        # self.titleBar, self.closeButton = self.titleBar, self.closeButton
+
+        self.con = sqlite3.connect("notes_db.sqlite")
+
+        # свернуть и закрыть - функции кнопок верхней панели
+        self.closeButton.clicked.connect(self.close)
+        # self.closeButton.mouseHoverEvent = self.closeButton.setStyleSheet("background-color: red")
+        self.hideButton.clicked.connect(self.showMinimized)
+        self.titleBar.mousePressEvent = self.titleBarMousePressEvent
+
+        # события для кнопок слева
+        self.goToNotes.mousePressEvent = self.switch_to_notes
+        self.addButton.mousePressEvent = self.add_todo
+        self.removeButton.mousePressEvent = self.remove_todo
+        self.exportButton.mousePressEvent = self.export_todo
+        self.listWidget.itemDoubleClicked.connect(self.todo_clicked)
+        self.calendarButton.mousePressEvent = self.open_calender
+        self.settingsButton.mousePressEvent = self.open_settings
+        # ToDo сделать кнопку помощи
+
+        # self.elements_dictionary = {}
+        # self.update_list()
+        # ключ - номер в строчки в QListWidget, значение - id стикера
+
+    def switch_to_notes(self, event):
+        switch_to_notes()
+
+    def add_todo(self, event):
+        pass
+
+    def remove_todo(self, event):
+        pass
+
+    def export_todo(self, event):
+        pass
+
+    def todo_clicked(self):
+        pass
+
+    def open_calender(self, event):
+        pass
+
+    def open_settings(self, event):
+        pass
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    ex = MainMenu()
-    ex.show()
+    notes = NotesWindow()
+    todo = ToDoMenu()
+    notes.show()
     sys.exit(app.exec())
