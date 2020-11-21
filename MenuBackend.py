@@ -13,14 +13,7 @@ from NotesWindow import Ui_NotesWindow
 from NoteWindow import Ui_NoteWindow
 from ToDoMenu import Ui_ToDoMenu
 from ToDoWindow import Ui_ToDoWindow
-
-
-# def create_main_window():
-#     global app, ex
-#     app = QApplication(sys.argv)
-#     ex = MainMenu()
-#     ex.show()
-#     sys.exit(app.exec())
+from FilterWindow import Ui_SettingsWindow
 
 
 def switch_to_notes():
@@ -41,6 +34,10 @@ def update_notes_list():
 
 def update_todo_list():
     todos.update_table()
+
+
+def set_settings(color_index, has_deadline, is_undone):
+    todos.set_settings(color_index, has_deadline, is_undone)
 
 
 class NotesWindow(BaseWindow, Ui_NotesWindow):
@@ -236,7 +233,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
 
         self.elements_dictionary = {}
         # ключ - номер в строчки в QTableWidget, значение - id стикера
-        self.tableWidget.setColumnWidth(1, 10)
+        self.tableWidget.setColumnWidth(0, 5)
         header = self.tableWidget.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.update_table()
@@ -255,35 +252,55 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
         todo.show()
 
     def remove_todo(self, event):
-        # удаляем стикер
+        # удаляем план
 
         list_items = [x.row() for x in self.tableWidget.selectedIndexes()]
 
-        if not list_items:
-            return None
+        if list_items:
 
-        qm = QMessageBox()
+            qm = QMessageBox()
 
-        qm.setWindowTitle('Подтверждение удаления')
-        qm.setText('Вы действительно хотите удалить выделенный план?')
-        qm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        qm.setStyleSheet("background-color: rgb(23, 28, 37); color: rgb(255, 255, 255)")
-        button_yes = qm.button(QMessageBox.Yes)
-        button_yes.setText('Да')
-        button_no = qm.button(QMessageBox.No)
-        button_no.setText('Нет')
-        qm.exec_()
+            qm.setWindowTitle('Подтверждение удаления')
+            qm.setText('Вы действительно хотите удалить выделенный план?')
+            qm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            qm.setStyleSheet("background-color: rgb(23, 28, 37); color: rgb(255, 255, 255)")
+            button_yes = qm.button(QMessageBox.Yes)
+            button_yes.setText('Да')
+            button_no = qm.button(QMessageBox.No)
+            button_no.setText('Нет')
+            qm.exec_()
 
-        if qm.clickedButton() == button_yes:  # необходимо подтвердить удаление
-            todo_ids = [self.elements_dictionary[elem] for elem in list_items]
-            cur = self.con.cursor()
-            cur.execute("DELETE FROM todos WHERE id IN (" + ", ".join(
-                '?' * len(todo_ids)) + ")", todo_ids)
-            self.con.commit()
-            self.update_table()
+            if qm.clickedButton() == button_yes:  # необходимо подтвердить удаление
+                todo_ids = [self.elements_dictionary[elem] for elem in list_items]
+                cur = self.con.cursor()
+                cur.execute("DELETE FROM todos WHERE id IN (" + ", ".join(
+                    '?' * len(todo_ids)) + ")", todo_ids)
+                self.con.commit()
+                self.update_table()
 
+            else:
+                qm.close()
         else:
-            qm.close()
+            qm = QMessageBox()
+
+            qm.setWindowTitle('Подтверждение удаления')
+            qm.setText('Вы действительно хотите удалить се выполненные планы?')
+            qm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            qm.setStyleSheet("background-color: rgb(23, 28, 37); color: rgb(255, 255, 255)")
+            button_yes = qm.button(QMessageBox.Yes)
+            button_yes.setText('Да')
+            button_no = qm.button(QMessageBox.No)
+            button_no.setText('Нет')
+            qm.exec_()
+
+            if qm.clickedButton() == button_yes:  # необходимо подтвердить удаление
+                cur = self.con.cursor()
+                cur.execute("DELETE FROM todos WHERE done = 1")
+                self.con.commit()
+                self.update_table()
+
+            else:
+                qm.close()
 
     def export_todo(self, event):
         pass  # ToDo Экспорт в .docx текущего листа
@@ -293,11 +310,14 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
             cur = self.con.cursor()
             current_id = self.elements_dictionary[self.tableWidget.currentRow()]
             current_done = cur.execute("SELECT done FROM todos WHERE id = ?",
-                                       (current_id, ))
+                                       (current_id, )).fetchone()[0]
             cur.execute(
                 '''UPDATE todos
 SET done = ?
 WHERE id = ?''', (not current_done, current_id))
+            self.con.commit()
+
+            self.update_table()
 
     def todo_double_clicked(self):
         if self.tableWidget.currentColumn() == 1:
@@ -318,13 +338,14 @@ WHERE id = ?''', (not current_done, current_id))
         pass  # ToDo календарь, в котором отмечены все имеющие задачи с датами
 
     def open_settings(self, event):
-        pass
+        filter = FilterWindow()
+        filter.show()
 
     def update_table(self):
         self.tableWidget.clear()
         cur = self.con.cursor()
         ids = cur.execute("SELECT id FROM todos").fetchall()
-        todo_inf = cur.execute("SELECT name, color_id, done FROM todos").fetchall()
+        todo_inf = cur.execute("SELECT name, color_id, date, done FROM todos").fetchall()
         colors = cur.execute("SELECT color_id from todos").fetchall()
         colors_dict = {}
         for color_id in colors:
@@ -335,11 +356,16 @@ WHERE id = ?''', (not current_done, current_id))
         if ids:
             self.tableWidget.setRowCount(len(ids))
             self.tableWidget.setColumnCount(2)
-            for i, (todo_id, (todo_name, todo_color, todo_done)) in enumerate(zip(ids, todo_inf)):
-                self.elements_dictionary[i] = todo_id[0]
+            for i, (todo_id, (todo_name, todo_color, todo_date, todo_done))\
+                    in enumerate(zip(ids, todo_inf)):
 
-                name, done = QTableWidgetItem(todo_name), QTableWidgetItem()
-                name.setBackground(QColor(*map(int, colors_dict[todo_color].split(', '))))
+                self.elements_dictionary[i] = todo_id[0]
+                background_color = list(map(int, colors_dict[todo_color].split(', ')))
+                if not todo_date:
+                    todo_date = ''
+
+                name, done = QTableWidgetItem(f"{todo_date} {todo_name}"), QTableWidgetItem()
+                name.setBackground(QColor(*background_color))
                 self.tableWidget.setItem(i, 1, name)
 
                 if todo_done:
@@ -347,9 +373,69 @@ WHERE id = ?''', (not current_done, current_id))
                 else:
                     done.setText('r')
 
-                done.setBackground(QColor(*map(int, colors_dict[todo_color].split(', '))))
+                done.setBackground(QColor(*background_color))
                 done.setFont(QFont("Webdings"))
                 self.tableWidget.setItem(i, 0, done)
+
+    def set_settings(self, color_index, has_deadline, is_undone):
+        queries = []
+        if color_index:
+            queries.append(f'color_id = {color_index}')
+
+        if has_deadline:
+            queries.append(f'date IS NOT NULL')
+
+        if is_undone:
+            queries.append(f'done = 0')
+
+        if queries:
+
+            self.tableWidget.clear()
+            cur = self.con.cursor()
+            ids = cur.execute(
+                f"SELECT id FROM todos WHERE {' AND '.join(queries)}").fetchall()
+            selected_ids = tuple([todo_id[0] for todo_id in ids])
+            todo_inf = cur.execute(
+                "SELECT name, color_id, date, done FROM todos WHERE id IN (" +
+                ", ".join('?' * len(selected_ids)) + ")", selected_ids).fetchall()
+
+            colors_dict = {}
+            if not color_index:
+                colors = [information[1] for information in todo_inf]
+                for color_id in colors:
+                    color_code = cur.execute(
+                        "SELECT color_code FROM colors WHERE color_id = ?", (color_id,)).fetchone()[
+                        0]
+                    colors_dict[color_id] = color_code
+            else:
+                color_code = cur.execute(
+                        "SELECT color_code FROM colors WHERE color_id = ?",
+                    (color_index,)).fetchone()[0]
+                colors_dict[color_index] = color_code
+
+            if ids:
+                self.tableWidget.setRowCount(len(ids))
+                self.tableWidget.setColumnCount(2)
+                for i, (todo_id, (todo_name, todo_color, todo_date, todo_done)) \
+                        in enumerate(zip(ids, todo_inf)):
+
+                    self.elements_dictionary[i] = todo_id[0]
+                    background_color = list(map(int, colors_dict[todo_color].split(', ')))
+                    if not todo_date:
+                        todo_date = ''
+
+                    name, done = QTableWidgetItem(f"{todo_date} {todo_name}"), QTableWidgetItem()
+                    name.setBackground(QColor(*background_color))
+                    self.tableWidget.setItem(i, 1, name)
+
+                    if todo_done:
+                        done.setText('a')
+                    else:
+                        done.setText('r')
+
+                    done.setBackground(QColor(*background_color))
+                    done.setFont(QFont("Webdings"))
+                    self.tableWidget.setItem(i, 0, done)
 
 
 class ToDoWindow(BaseWindow, Ui_ToDoWindow):
@@ -427,6 +513,33 @@ class ToDoWindow(BaseWindow, Ui_ToDoWindow):
 
     def change_date(self):
         self.dateEdit.setEnabled(self.deadlineBox.isChecked())
+
+
+class FilterWindow(BaseWindow, Ui_SettingsWindow):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+
+        self.con = sqlite3.connect("notes_db.sqlite")
+        self.closeButton.clicked.connect(self.close_settings)
+        self.hideButton.clicked.connect(self.showMinimized)
+        self.titleBar.mousePressEvent = self.titleBarMousePressEvent
+
+        self.defaultButton.mousePressEvent = self.set_deafult  # ToDo
+        self.doneButton.mousePressEvent = self.set_settings  # ToDo
+
+    def close_settings(self):
+        self.close()
+
+    def set_deafult(self, event):
+        update_todo_list()
+
+    def set_settings(self, event):
+        color_id = self.colorBox.currentIndex()
+        has_deadline = self.deadlineBox.isChecked()
+        is_undone = self.undoneBox.isChecked()
+
+        set_settings(color_id, has_deadline, is_undone)
 
 
 if __name__ == '__main__':
