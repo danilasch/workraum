@@ -3,6 +3,7 @@ import sqlite3
 import datetime as dt
 from docx import Document
 from calendar import monthrange
+from collections import defaultdict
 
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -117,18 +118,19 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
             qm.close()
 
     def export_note(self, event):  # экспортируем выбраный стикер в файл .txt
-        file_name = QFileDialog.getSaveFileName(
-            self, 'Сохранить в текстовый документ', '/',
-            'Текстовый документ (*.txt)')[0]
-        if file_name:
-            cur = self.con.cursor()
-            file = open(file_name, 'w')
-            text = cur.execute(
-                "SELECT text FROM notes WHERE id = ?",
-                (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[
-                0]
-            file.write(text)
-            file.close()
+        if self.listWidget.selectedIndexes():
+            file_name = QFileDialog.getSaveFileName(
+                self, 'Сохранить в текстовый документ', '/',
+                'Текстовый документ (*.txt)')[0]
+            if file_name:
+                cur = self.con.cursor()
+                file = open(file_name, 'w')
+                text = cur.execute(
+                    "SELECT text FROM notes WHERE id = ?",
+                    (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[
+                    0]
+                file.write(text)
+                file.close()
 
     def update_list(self):
         self.listWidget.clear()  # очищаем список стикеров, чтобы заполинть его
@@ -160,7 +162,7 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
 
         self.setWindowFlags(Qt.Window | Qt.CustomizeWindowHint)
         self.drag_active = False  # флаг для drag and drop стикера
-        self.spacer.mousePressEvent = self.spacerMousePressEvent
+        self.spacer.mousePressEvent = self.spacer_press_event
 
         self.closeButton.mousePressEvent = self.edit_note
 
@@ -178,13 +180,14 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
         else:  # создаём новый стикер
             self.nameInput.setText("Новый стикер")
 
-            cur.execute("INSERT INTO notes(id, name, text) VALUES(?, ?, ?)",
-                        (self.id, self.nameInput.text(), self.textEdit.toPlainText()))
+            cur.execute(
+                "INSERT INTO notes(id, name, text) VALUES(?, ?, ?)",
+                (self.id, self.nameInput.text(), self.textEdit.toPlainText()))
             self.con.commit()
 
             update_notes_list()
 
-    def spacerMousePressEvent(self, e):  # метод для drag and drop: запоминаем изначальную позицию
+    def spacer_press_event(self, e):  # метод для drag and drop: запоминаем изначальную позицию
         self.previous_pos = e.globalPos()
         self.drag_active = True
 
@@ -194,7 +197,6 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
             self.move(self.x() + delta.x(), self.y() + delta.y())
             self.previous_pos = e.globalPos()
 
-
     def mouseReleaseEvent(self, e):
         if self.drag_active:
             self.drag_active = False
@@ -203,8 +205,8 @@ class NoteWindow(QMainWindow, Ui_NoteWindow):
         cur = self.con.cursor()
 
         cur.execute('''UPDATE notes
-SET name = ?, text = ?
-WHERE id = ?''', (self.nameInput.text(), self.textEdit.toPlainText(), self.id))
+        SET name = ?, text = ?
+        WHERE id = ?''', (self.nameInput.text(), self.textEdit.toPlainText(), self.id))
         self.con.commit()
 
         update_notes_list()  # обновляем графическое представление БД
@@ -241,7 +243,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
         self.tableWidget.setColumnWidth(0, 5)
         header = self.tableWidget.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.set_settings(*[None]* 4)
+        self.set_settings(*[None] * 4)
 
     def switch_to_notes(self, event):
         switch_to_notes()
@@ -304,26 +306,51 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
             else:
                 qm.close()
 
-    def export_todo(self, event):
+    def export_todo(self, event):  # экспорт текущего листа планов в .docx
         file_name = QFileDialog.getSaveFileName(
             self, 'Сохранить в текстовый документ', '/',
             'Текстовый документ (*.docx)')[0]
+        document = Document()
         if file_name:
             cur = self.con.cursor()
-            file = open(file_name, 'w')
-            text = cur.execute(
-                "SELECT text FROM notes WHERE id = ?",
-                (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[
-                0]
-            file.write(text)
-            file.close()
+            ids = tuple(self.elements_dictionary.values())
+            #  ищем необходимую дедлайны и названия планов в базе данных
+            information = list(cur.execute(
+                "SELECT date, name FROM todos WHERE id IN"
+                " (" + ", ".join('?' * len(ids)) + ")", ids).fetchall())
 
-    def todo_clicked(self):
+            without_dates = []
+            dates = defaultdict(list)
+
+            #  разделяем имеющиеся планы на категории по датам
+            for info in information:
+                date = info[0]
+                if date:
+                    dates[dt.date.fromisoformat(date)].append(info[1])
+                else:
+                    without_dates.append(info[1])  # отдельный список для планов без дедлайнов
+            # формируем документ
+            # он будет представлять из себя ненумерованный список, в котором
+            # сначала идут планы без дедлайна, а потом сгруппированные по датам
+            # и по возрастанию планы с дедлайнами
+            for todo in without_dates:
+                document.add_paragraph(todo, style='List Bullet')
+
+            for date in sorted(dates.keys()):
+                p = document.add_paragraph()
+                p.add_run(str(date)).bold = True
+                for name in dates[date]:
+                    document.add_paragraph(name, style='List Bullet')
+
+            document.save(file_name)
+
+    def todo_clicked(self):  # меняем статус готовности плана
         if self.tableWidget.currentColumn() == 0:
             cur = self.con.cursor()
             current_id = self.elements_dictionary[self.tableWidget.currentRow()]
-            current_done = cur.execute("SELECT done FROM todos WHERE id = ?",
-                                       (current_id, )).fetchone()[0]
+            current_done = cur.execute(
+                "SELECT done FROM todos WHERE id = ?",
+                (current_id, )).fetchone()[0]
             cur.execute(
                 '''UPDATE todos
                 SET done = ?
@@ -332,30 +359,27 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
 
             set_settings()
 
-    def todo_double_clicked(self):
+    def todo_double_clicked(self):  # открываем существующий план
+        # находим id стикера по её порядковому номеру
         if self.tableWidget.currentColumn() == 1:
             todo_id = self.elements_dictionary[self.tableWidget.currentRow()]
 
+            # открываем окно для редактирования стикера и помечаем её как не новую
             todo = ToDoWindow(todo_id, False)
             todo.show()
 
-    def open_todo(self):
-        # находим id стикера по её порядковому номеру
-        todo_id = self.elements_dictionary[self.tableWidget.currentRow()]
-
-        # открываем окно для редактирования стикера и помечаем её как не новую
-        todo = ToDoWindow(todo_id, False)
-        todo.show()
-
-    def open_calender(self, event):
+    def open_calender(self, event):  # открываем окно с календарём
         calendar = CalendarWindow()
         calendar.show()
 
-    def open_settings(self, event):
-        filter = FilterWindow()
-        filter.show()
+    def open_settings(self, event):  # открываем окно с фильтром
+        filter_window = FilterWindow()
+        filter_window.show()
 
     def set_settings(self, color_index, has_deadline, is_undone, date):
+        # применяем настройки
+        # просматриваем каждый из переданных параметров и формируем
+        # из них запрос
         queries = []
         if color_index:
             queries.append(f'color_id = {color_index}')
@@ -372,7 +396,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
         self.tableWidget.clear()
         cur = self.con.cursor()
 
-        if queries:
+        if queries:  # если есть какие-то парамеры для фильтрации
 
             self.tableWidget.clear()
             cur = self.con.cursor()
@@ -385,6 +409,8 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
 
             colors_dict = {}
             if not color_index:
+                # отсматриваем имеющиеся в базе данных цвета и устанавливаем
+                # соответствия между id и кодами цветов
                 colors = [information[1] for information in todo_inf]
                 for color_id in colors:
                     color_code = cur.execute(
@@ -393,7 +419,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
                     colors_dict[color_id] = color_code
             else:
                 color_code = cur.execute(
-                        "SELECT color_code FROM colors WHERE color_id = ?",
+                    "SELECT color_code FROM colors WHERE color_id = ?",
                     (color_index,)).fetchone()[0]
                 colors_dict[color_index] = color_code
 
@@ -408,7 +434,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
                     0]
                 colors_dict[color_id] = color_code
 
-        if ids:
+        if ids:  # если имеются какие-либо результаты запроса, выводим их
             self.tableWidget.setRowCount(len(ids))
             self.tableWidget.setColumnCount(2)
             for i, (todo_id, (todo_name, todo_color, todo_date, todo_done)) \
@@ -432,34 +458,34 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
                 done.setFont(QFont("Webdings"))
                 self.tableWidget.setItem(i, 0, done)
 
-    def get_new_todo_id(self):
-        # ids = self.con.cursor().execute(
-        #     "SELECT id FROM todos").fetchall()
+    def get_new_todo_id(self):  # формируем уникальный id т.к. автоинкремент не работает
+        ids = self.con.cursor().execute(
+            "SELECT id FROM todos").fetchall()
         if self.elements_dictionary:
-            return max(self.elements_dictionary.values()) + 1
+            return max(list([todo_id[0] for todo_id in ids])) + 1
         else:
             return 0
 
 
 class ToDoWindow(BaseWindow, Ui_ToDoWindow):
-    def __init__(self, todo_id, is_new_note):
+    def __init__(self, todo_id, is_new_note, date=None):
         super().__init__()
         self.setupUi(self)
         self.id = todo_id
         self.is_new = is_new_note
         
         self.drag_active = False  # флаг для drag and drop плана
-        self.spacer.mousePressEvent = self.titleBarMousePressEvent  # ToDo
+        self.spacer.mousePressEvent = self.titleBarMousePressEvent
 
-        self.doneButton.mousePressEvent = self.edit_todo  # ToDo
+        self.doneButton.mousePressEvent = self.edit_todo
         self.goBackButton.mousePressEvent = self.go_back
-        self.colorBox.currentIndexChanged.connect(self.change_color)  # ToDo
+        self.colorBox.currentIndexChanged.connect(self.change_color)
         self.deadlineBox.stateChanged.connect(self.change_date)
 
         self.con = sqlite3.connect("notes_db.sqlite")
         cur = self.con.cursor()
 
-        if not is_new_note:
+        if not is_new_note:  # если план не новый, подгружаем в окно данные из БД
 
             self.nameInput.setText(cur.execute(
                 "SELECT name FROM todos WHERE id = ?", (todo_id,)).fetchone()[0])
@@ -478,18 +504,27 @@ class ToDoWindow(BaseWindow, Ui_ToDoWindow):
                 self.deadlineBox.setChecked(True)
                 self.dateEdit.setDate(dt.date.fromisoformat(date))
 
-        else:
+        else:  # иначе создаём новый план
             self.nameInput.setText("Новый план")
-            self.dateEdit.setDate(dt.date.today())
 
-            cur.execute(
-                "INSERT INTO todos(id, name, info, color_id, done) VALUES(?, ?, ?, ?, ?)",
-                (self.id, self.nameInput.text(), self.infoEdit.toPlainText(),
-                 1, False))
+            if date:
+                self.deadlineBox.setChecked(True)
+                self.dateEdit.setDate(date)
+                cur.execute(
+                    "INSERT INTO todos(id, name, info, date, color_id, done)"
+                    " VALUES(?, ?, ?, ?, ?, ?)",
+                    (self.id, self.nameInput.text(), self.infoEdit.toPlainText(),
+                     date.toString("yyyy-MM-dd"), 1, False))
+            else:
+                self.dateEdit.setDate(dt.date.today())
+                cur.execute(
+                    "INSERT INTO todos(id, name, info, color_id, done) VALUES(?, ?, ?, ?, ?)",
+                    (self.id, self.nameInput.text(), self.infoEdit.toPlainText(),
+                     1, False))
             self.con.commit()
             set_settings()
 
-    def edit_todo(self, event):
+    def edit_todo(self, event):  # сохраняем изменения в плане
         cur = self.con.cursor()
 
         if self.deadlineBox.isChecked():
@@ -504,21 +539,22 @@ class ToDoWindow(BaseWindow, Ui_ToDoWindow):
         self.con.commit()
         set_settings()
 
-    def change_color(self):
+    def change_color(self):  # меняем цвет плана в его окне и в списке
         cur = self.con.cursor()
         color = cur.execute(
-            "SELECT color_code FROM colors WHERE color_id = ?", (self.colorBox.currentIndex() + 1, )
-        ).fetchone()[0]
+            "SELECT color_code FROM colors WHERE color_id = ?",
+            (self.colorBox.currentIndex() + 1, )).fetchone()[0]
         self.spacer.setStyleSheet(f"background-color: rgb({color})")
 
-    def go_back(self, event):
+    def go_back(self, event):  # закрываем окно
         self.close()
 
     def change_date(self):
+        # в зависимости от статуса deadlineBox активируем или деактивируем поле ввода даты
         self.dateEdit.setEnabled(self.deadlineBox.isChecked())
 
 
-class FilterWindow(BaseWindow, Ui_SettingsWindow):
+class FilterWindow(BaseWindow, Ui_SettingsWindow):  # окно настройки представленния списка
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -528,16 +564,17 @@ class FilterWindow(BaseWindow, Ui_SettingsWindow):
         self.hideButton.clicked.connect(self.showMinimized)
         self.titleBar.mousePressEvent = self.titleBarMousePressEvent
 
-        self.defaultButton.mousePressEvent = self.set_deafult
+        self.defaultButton.mousePressEvent = self.set_default
         self.doneButton.mousePressEvent = self.set_settings
 
-    def close_settings(self):
+    def close_settings(self):  # закрываем окно
         self.close()
 
-    def set_deafult(self, event):
+    def set_default(self, event):
+        # восстанавливаем исходные настройки представления (без фильтров)
         set_settings(refresh=True)
 
-    def set_settings(self, event):
+    def set_settings(self, event):  # применяем имеющиеся настройки представления
         color_id = self.colorBox.currentIndex()
         has_deadline = self.deadlineBox.isChecked()
         is_undone = self.undoneBox.isChecked()
@@ -546,7 +583,7 @@ class FilterWindow(BaseWindow, Ui_SettingsWindow):
         set_settings()
 
 
-class CalendarWindow(BaseWindow, Ui_CalendarWindow):
+class CalendarWindow(BaseWindow, Ui_CalendarWindow):  # календарь для планов
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -556,7 +593,7 @@ class CalendarWindow(BaseWindow, Ui_CalendarWindow):
         self.hideButton.clicked.connect(self.showMinimized)
         self.titleBar.mousePressEvent = self.titleBarMousePressEvent
 
-        self.calendarWidget.currentPageChanged.connect(self.highlight_date)
+        self.calendarWidget.currentPageChanged.connect(self.highlight_dates)
         self.calendarWidget.activated.connect(self.create_todo)
         self.calendarWidget.selectionChanged.connect(self.show_selected_todos)
 
@@ -564,61 +601,72 @@ class CalendarWindow(BaseWindow, Ui_CalendarWindow):
         self.highlight_format = QTextCharFormat()
         self.highlight_format.setBackground(Qt.lightGray)
         self.highlight_format.setForeground(self.palette().color(QPalette.HighlightedText))
-        self.highlight_date(
+        self.highlight_dates(
             self.calendarWidget.yearShown(), self.calendarWidget.monthShown())
 
         self.calendarWidget.setSelectedDate(dt.date.today())
         date = self.calendarWidget.selectedDate()
+        # отображаем в списке только планы на выбранную дату (сегодня)
         settings.change(date=date)
         set_settings()
 
         self.show_selected_todos()
 
     def show_selected_todos(self):
+        # отображаем в списке планов те, которые закреплены за выбранной в календаре датой
         date = self.calendarWidget.selectedDate()
         settings.change(date=date)
         set_settings()
 
     def update_dates_list(self):
+        # актуализируем список дат
         cur = self.con.cursor()
         dates = cur.execute(
             "SELECT date FROM todos WHERE date IS NOT NULL").fetchall()
-        self.dates = [date[0] for date in dates]
+        self.dates = [date[0] for date in dates]  # список имеющихся дат
 
     def date_iter(self, year, month):
+        #  вспомогательный метод, возвращающий итератор
+        #  со всеми датами открытого на данный момент месяца
         for i in range(1, monthrange(year, month)[1] + 1):
             yield dt.date(year, month, i).strftime("%Y-%m-%d")
 
-    def highlight_date(self, year, month):
+    def highlight_dates(self, year, month):
+        #  выделяем в текущем листе календаря даты, к которым прикреплены планы
         for day in self.date_iter(year, month):
             if day in self.dates:
                 self.calendarWidget.setDateTextFormat(
                     dt.datetime.strptime(day, "%Y-%m-%d"), self.highlight_format)
 
-    def create_todo(self, date):
-        todo = ToDoWindow(get_new_todo_id(), True)
+    def create_todo(self):
+        #  создание нового плана при двойном нажатии на дату
+        date = self.calendarWidget.selectedDate()
+        todo = ToDoWindow(get_new_todo_id(), True, date)
         todo.show()
-        todo.deadlineBox.setChecked(True)
-        todo.dateEdit.setDate(date)
-        self.highlight_date(
+        self.dates.append(date.toString("yyyy-MM-dd"))
+        # todo.deadlineBox.setChecked(True)
+        # todo.dateEdit.setDate(self.calendarWidget.selectedDate())
+        self.highlight_dates(
             self.calendarWidget.yearShown(), self.calendarWidget.monthShown())
 
-    def close_calendar(self):
+    def close_calendar(self):  # закрытие окна
         set_settings(refresh=True)
         self.close()
 
 
 class ToDoSettings:
+    #  служебный класс для хранения и изменения настроек представления
     def __init__(self):
         self.settings_are_active = False
         self.refresh()
 
-    def refresh(self):
+    def refresh(self):  # возвращаем настройки представления по умолчанию
         self.params = [None, False, False, None]
 
     def change(self,
                color_index=None, has_deadline=None,
                is_undone=None, date=None):
+        #  добавляем новые настройки представления к уже имеющимся
         parameters = [color_index, has_deadline, is_undone, date]
         for i in range(4):
             if parameters[i] is not None and parameters[i] != self.params[i]:
