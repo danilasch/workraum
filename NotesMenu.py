@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'NotesWindow.ui'
+# Form implementation generated from reading ui file 'NotesMenu.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.1
 #
@@ -11,16 +11,16 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 
-class Ui_NotesWindow(object):
-    def setupUi(self, NotesWindow):
-        NotesWindow.setObjectName("NotesWindow")
-        NotesWindow.resize(950, 650)
-        NotesWindow.setMinimumSize(QtCore.QSize(950, 650))
-        NotesWindow.setMaximumSize(QtCore.QSize(950, 16777215))
-        NotesWindow.setLayoutDirection(QtCore.Qt.LeftToRight)
-        NotesWindow.setStyleSheet("background-color: rgb(23, 28, 37);\n"
+class Ui_NotesMenu(object):
+    def setupUi(self, NotesMenu):
+        NotesMenu.setObjectName("NotesMenu")
+        NotesMenu.resize(950, 650)
+        NotesMenu.setMinimumSize(QtCore.QSize(950, 650))
+        NotesMenu.setMaximumSize(QtCore.QSize(950, 16777215))
+        NotesMenu.setLayoutDirection(QtCore.Qt.LeftToRight)
+        NotesMenu.setStyleSheet("background-color: rgb(23, 28, 37);\n"
 "color: rgb(255, 255, 255);")
-        self.BaseWidget = QtWidgets.QWidget(NotesWindow)
+        self.BaseWidget = QtWidgets.QWidget(NotesMenu)
         self.BaseWidget.setStyleSheet("background-color: rgb(23, 28, 37);")
         self.BaseWidget.setObjectName("BaseWidget")
         self.goToToDo = QtWidgets.QLabel(self.BaseWidget)
@@ -94,13 +94,13 @@ class Ui_NotesWindow(object):
         self.askButton.setText("")
         self.askButton.setPixmap(QtGui.QPixmap("ui/questionIcon.png"))
         self.askButton.setObjectName("askButton")
-        NotesWindow.setCentralWidget(self.BaseWidget)
+        NotesMenu.setCentralWidget(self.BaseWidget)
 
-        self.retranslateUi(NotesWindow)
-        QtCore.QMetaObject.connectSlotsByName(NotesWindow)
+        self.retranslateUi(NotesMenu)
+        QtCore.QMetaObject.connectSlotsByName(NotesMenu)
 
-    def retranslateUi(self, NotesWindow):
+    def retranslateUi(self, NotesMenu):
         _translate = QtCore.QCoreApplication.translate
-        NotesWindow.setWindowTitle(_translate("NotesWindow", "MainWindow"))
-        self.closeButton.setText(_translate("NotesWindow", "r"))
-        self.hideButton.setText(_translate("NotesWindow", "0"))
+        NotesMenu.setWindowTitle(_translate("NotesMenu", "MainWindow"))
+        self.closeButton.setText(_translate("NotesMenu", "r"))
+        self.hideButton.setText(_translate("NotesMenu", "0"))

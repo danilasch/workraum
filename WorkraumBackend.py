@@ -4,6 +4,7 @@ import datetime as dt
 from docx import Document
 from calendar import monthrange
 from collections import defaultdict
+import webbrowser
 
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -12,12 +13,13 @@ from PyQt5.QtWidgets import QMainWindow, QListWidgetItem, QFileDialog, QMessageB
 
 from BaseWindowClass import BaseWindow
 
-from NotesWindow import Ui_NotesWindow
+from NotesMenu import Ui_NotesMenu
 from NoteWindow import Ui_NoteWindow
 from ToDoMenu import Ui_ToDoMenu
 from ToDoWindow import Ui_ToDoWindow
-from FilterWindow import Ui_SettingsWindow
+from SettingsWindow import Ui_SettingsWindow
 from CalendarWindow import Ui_CalendarWindow
+from InfoWindow import Ui_InfoWindow
 
 
 def switch_to_notes():
@@ -46,11 +48,10 @@ def get_new_todo_id():
     return todos.get_new_todo_id()
 
 
-class NotesWindow(BaseWindow, Ui_NotesWindow):
+class NotesMenu(BaseWindow, Ui_NotesMenu):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        # self.titleBar, self.closeButton = self.titleBar, self.closeButton
 
         self.con = sqlite3.connect("notes_db.sqlite")
 
@@ -66,7 +67,7 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
         self.removeButton.mousePressEvent = self.remove_note
         self.exportButton.mousePressEvent = self.export_note
         self.listWidget.itemDoubleClicked.connect(self.note_clicked)
-        # ToDo сделать кнопку помощи
+        self.askButton.mousePressEvent = self.open_info
 
         self.elements_dictionary = {}
         self.update_list()
@@ -127,8 +128,8 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
                 file = open(file_name, 'w')
                 text = cur.execute(
                     "SELECT text FROM notes WHERE id = ?",
-                    (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)).fetchone()[
-                    0]
+                    (self.elements_dictionary[self.listWidget.selectedIndexes()[0].row()],)
+                ).fetchone()[0]
                 file.write(text)
                 file.close()
 
@@ -152,6 +153,10 @@ class NotesWindow(BaseWindow, Ui_NotesWindow):
         # открываем окно для редактирования стикера и помечаем её как не новую
         note = NoteWindow(note_id, False)
         note.show()
+
+    def open_info(self, event):
+        info = InfoWindow()
+        info.show()
 
 
 class NoteWindow(QMainWindow, Ui_NoteWindow):
@@ -236,7 +241,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
         self.tableWidget.itemDoubleClicked.connect(self.todo_double_clicked)
         self.calendarButton.mousePressEvent = self.open_calender
         self.settingsButton.mousePressEvent = self.open_settings
-        # ToDo сделать кнопку помощи
+        self.askButton.mousePressEvent = self.open_info
 
         self.elements_dictionary = {}
         # ключ - номер в строчки в QTableWidget, значение - id стикера
@@ -373,7 +378,7 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
         calendar.show()
 
     def open_settings(self, event):  # открываем окно с фильтром
-        filter_window = FilterWindow()
+        filter_window = SettingsWindow()
         filter_window.show()
 
     def set_settings(self, color_index, has_deadline, is_undone, date):
@@ -466,6 +471,10 @@ class ToDoMenu(BaseWindow, Ui_ToDoMenu):
         else:
             return 0
 
+    def open_info(self, event):
+        info = InfoWindow()
+        info.show()
+
 
 class ToDoWindow(BaseWindow, Ui_ToDoWindow):
     def __init__(self, todo_id, is_new_note, date=None):
@@ -554,7 +563,7 @@ class ToDoWindow(BaseWindow, Ui_ToDoWindow):
         self.dateEdit.setEnabled(self.deadlineBox.isChecked())
 
 
-class FilterWindow(BaseWindow, Ui_SettingsWindow):  # окно настройки представленния списка
+class SettingsWindow(BaseWindow, Ui_SettingsWindow):  # окно настройки представленния списка
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -625,15 +634,16 @@ class CalendarWindow(BaseWindow, Ui_CalendarWindow):  # календарь дл�
             "SELECT date FROM todos WHERE date IS NOT NULL").fetchall()
         self.dates = [date[0] for date in dates]  # список имеющихся дат
 
-    def date_iter(self, year, month):
-        #  вспомогательный метод, возвращающий итератор
-        #  со всеми датами открытого на данный момент месяца
-        for i in range(1, monthrange(year, month)[1] + 1):
-            yield dt.date(year, month, i).strftime("%Y-%m-%d")
-
     def highlight_dates(self, year, month):
         #  выделяем в текущем листе календаря даты, к которым прикреплены планы
-        for day in self.date_iter(year, month):
+
+        def date_iter(year, month):
+            #  вспомогательный метод, возвращающий итератор
+            #  со всеми датами открытого на данный момент месяца
+            for i in range(1, monthrange(year, month)[1] + 1):
+                yield dt.date(year, month, i).strftime("%Y-%m-%d")
+
+        for day in date_iter(year, month):
             if day in self.dates:
                 self.calendarWidget.setDateTextFormat(
                     dt.datetime.strptime(day, "%Y-%m-%d"), self.highlight_format)
@@ -644,8 +654,6 @@ class CalendarWindow(BaseWindow, Ui_CalendarWindow):  # календарь дл�
         todo = ToDoWindow(get_new_todo_id(), True, date)
         todo.show()
         self.dates.append(date.toString("yyyy-MM-dd"))
-        # todo.deadlineBox.setChecked(True)
-        # todo.dateEdit.setDate(self.calendarWidget.selectedDate())
         self.highlight_dates(
             self.calendarWidget.yearShown(), self.calendarWidget.monthShown())
 
@@ -673,9 +681,27 @@ class ToDoSettings:
                 self.params[i] = parameters[i]
 
 
+class InfoWindow(BaseWindow, Ui_InfoWindow):
+    def __init__(self):
+        super().__init__()
+        self.setupUi(self)
+
+        self.closeButton.clicked.connect(self.close_info)
+        self.hideButton.clicked.connect(self.showMinimized)
+        self.titleBar.mousePressEvent = self.titleBarMousePressEvent
+
+        self.githubIcon.mousePressEvent = self.open_github
+
+    def close_info(self):
+        self.close()
+
+    def open_github(self, event):
+        webbrowser.open("https://github.com/danilasch/workraum")
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    notes = NotesWindow()
+    notes = NotesMenu()
     todos = ToDoMenu()
     notes.show()
     settings = ToDoSettings()
