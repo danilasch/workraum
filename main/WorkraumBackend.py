@@ -512,6 +512,8 @@ class ToDoWindow(BaseWindow, Ui_ToDoWindow):
             if date:
                 self.deadlineBox.setChecked(True)
                 self.dateEdit.setDate(dt.date.fromisoformat(date))
+            else:
+                self.dateEdit.setDate(dt.date.today())
 
         else:  # иначе создаём новый план
             self.nameInput.setText("Новый план")
